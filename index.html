@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="vi-VN" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    
+    <title>Học Tiếng Việt Lớp 1 - AI Đánh Vần & Chấm Đọc</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.6/babel.min.js"></script>
+
+    <!-- Font chữ Nunito -->
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Nunito', sans-serif; background-color: #f0f9ff; color: #1e293b; user-select: none; }
+        .kid-card { background: white; border-radius: 1.5rem; border: 4px solid #bae6fd; box-shadow: 0 10px 25px -5px rgba(56, 189, 248, 0.2); }
+        .btn-3d { transition: all 0.1s; border-bottom-width: 4px; }
+        .btn-3d:active { transform: translateY(3px); border-bottom-width: 0px; }
+        .pulse-ring { animation: pulseRing 1.5s infinite; }
+        @keyframes pulseRing { 
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 
+            70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); } 
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } 
+        }
+        .option-focused {
+            border-color: #f59e0b !important;
+            background-color: #fef3c7 !important;
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
+        }
+        .dots-loading::after {
+            content: '...';
+            animation: dots 1.5s steps(5, end) infinite;
+        }
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+    </style>
+</head>
+<body class="p-2 sm:p-6">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Hàm xáo trộn mảng phương án chọn
+        const shuffleArray = (array) => {
+            const arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        };
+
+        const initialRawData = {
+            readingWords: [
+                { word: "ba", spell: "bờ a ba, ba" },
+                { word: "cá", spell: "cờ a ca sắc cá, cá" },
+                { word: "bò", spell: "bờ o bo huyền bò, bò" },
+                { word: "gà", spell: "gờ a ga huyền gà, gà" },
+                { word: "nhà", spell: "nhờ a nha huyền nhà, nhà" },
+                { word: "xe", spell: "xờ e xe, xe" },
+                { word: "chợ", spell: "chờ ơ chơ nặng chợ, chợ" },
+                { word: "cỏ", spell: "cờ o co hỏi cỏ, cỏ" },
+                { word: "mẹ", spell: "mờ e me nặng mẹ, mẹ" },
+                { word: "bé", spell: "bờ e be sắc bé, bé" }
+            ],
+            readingSentences: [
+                "Bé có cá bống.",
+                "Mẹ đi chợ mua cá.",
+                "Bố đi xe máy.",
+                "Bé chăm chỉ học bài.",
+                "Nhà bé có con mèo.",
+                "Bé giúp mẹ quét nhà.",
+                "Sân trường có nhiều hoa.",
+                "Bé thích ăn quả táo.",
+                "Cả nhà cùng ăn cơm.",
+                "Bé là học sinh ngoan."
+            ],
+            fillLetters: [
+                { id: 1, display: "...á", fullWord: "cá", options: ["c", "t", "b"], answer: "c" },
+                { id: 2, display: "...ò", fullWord: "bò", options: ["b", "m", "d"], answer: "b" },
+                { id: 3, display: "...ẹ", fullWord: "mẹ", options: ["m", "n", "h"], answer: "m" },
+                { id: 4, display: "x...", fullWord: "xe", options: ["e", "o", "a"], answer: "e" },
+                { id: 5, display: "...à", fullWord: "gà", options: ["g", "d", "b"], answer: "g" },
+                { id: 6, display: "...é", fullWord: "bé", options: ["b", "c", "l"], answer: "b" },
+                { id: 7, display: "...ỏ", fullWord: "cỏ", options: ["c", "k", "q"], answer: "c" },
+                { id: 8, display: "n...", fullWord: "nơ", options: ["ơ", "o", "u"], answer: "ơ" },
+                { id: 9, display: "...ổ", fullWord: "hổ", options: ["h", "t", "l"], answer: "h" },
+                { id: 10, display: "...ờ", fullWord: "cờ", options: ["c", "k", "v"], answer: "c" }
+            ]
+        };
+
+        const processInitialData = (rawData) => ({
+            ...rawData,
+            fillLetters: rawData.fillLetters.map(q => ({
+                ...q,
+                options: shuffleArray(q.options)
+            }))
+        });
+
+        const cleanStr = (str) => str ? str.toLowerCase().replace(/[.,!?]/g, "").trim() : "";
+
+        // Chấm điểm Bài 1
+        const calculateWordScore = (spoken, wordObj) => {
+            const spokenClean = cleanStr(spoken);
+            const mainWordClean = cleanStr(wordObj.word);
+            const spellClean = cleanStr(wordObj.spell);
+
+            if (!spokenClean) return 0;
+            if (spokenClean === mainWordClean || spokenClean === spellClean) return 100;
+
+            const spokenWords = spokenClean.split(/\s+/).filter(Boolean);
+            const spellWords = spellClean.split(/\s+/).filter(Boolean);
+            const lastSpokenWord = spokenWords[spokenWords.length - 1] || "";
+
+            const hasMainWord = spokenWords.includes(mainWordClean) || lastSpokenWord === mainWordClean;
+
+            if (!hasMainWord) {
+                return Math.min(60, Math.round((spokenClean.includes(mainWordClean[0]) ? 40 : 20)));
+            }
+
+            if (spokenWords.length === 1 && spokenWords[0] === mainWordClean) {
+                return 100;
+            }
+
+            let spellMatched = 0;
+            spellWords.forEach(w => {
+                if (spokenWords.includes(w)) spellMatched++;
+            });
+
+            const spellRatio = spellWords.length > 0 ? (spellMatched / spellWords.length) : 1;
+
+            if (spellRatio >= 0.8) {
+                return 100;
+            } else {
+                return Math.round(85 + (spellRatio / 0.8) * 10);
+            }
+        };
+
+        // Chấm điểm Bài 2
+        const calculateSentenceScore = (spoken, targetSentence) => {
+            const spokenClean = cleanStr(spoken);
+            const targetClean = cleanStr(targetSentence);
+
+            if (!spokenClean) return 0;
+            if (spokenClean === targetClean) return 100;
+
+            const spokenWords = spokenClean.split(/\s+/).filter(Boolean);
+            const targetWords = targetClean.split(/\s+/).filter(Boolean);
+
+            let matched = 0;
+            let targetIdx = 0;
+
+            spokenWords.forEach(word => {
+                const foundIdx = targetWords.indexOf(word, targetIdx);
+                if (foundIdx !== -1) {
+                    matched++;
+                    targetIdx = foundIdx + 1;
+                }
+            });
+
+            const percent = Math.round((matched / targetWords.length) * 100);
+            return Math.min(100, percent);
+        };
+
+        const App = () => {
+            const [data, setData] = useState(() => processInitialData(initialRawData));
+            const [activeTab, setActiveTab] = useState('wordRead'); 
+
+            // Cấu hình % từ Bảng giáo viên
+            const [passThreshold, setPassThreshold] = useState(85); // Ngưỡng Tốt
+            const [perfectThreshold, setPerfectThreshold] = useState(100); // Ngưỡng Xuất sắc
+
+            // State Bài 1
+            const [wordIndex, setWordIndex] = useState(0);
+            const [isListeningWord, setIsListeningWord] = useState(false);
+            const [spokenWord, setSpokenWord] = useState("");
+            const [wordPercent, setWordPercent] = useState(null);
+            const [wordScore, setWordScore] = useState(0);
+
+            // State Bài 2
+            const [sentIndex, setSentIndex] = useState(0);
+            const [isListeningSent, setIsListeningSent] = useState(false);
+            const [spokenSent, setSpokenSent] = useState("");
+            const [sentPercent, setSentPercent] = useState(null);
+            const [sentScore, setSentScore] = useState(0);
+
+            // State Bài 3
+            const [fillIndex, setFillIndex] = useState(0);
+            const [focusedOptionIndex, setFocusedOptionIndex] = useState(0);
+            const [selectedLetter, setSelectedLetter] = useState(null);
+            const [fillScore, setFillScore] = useState(0);
+
+            // Refs
+            const recognitionRef = useRef(null);
+            const activeTabRef = useRef(activeTab);
+            const wordPercentRef = useRef(wordPercent);
+            const sentPercentRef = useRef(sentPercent);
+            const selectedLetterRef = useRef(selectedLetter);
+            const focusedOptionIndexRef = useRef(focusedOptionIndex);
+            const isListeningWordRef = useRef(isListeningWord);
+            const isListeningSentRef = useRef(isListeningSent);
+
+            useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+            useEffect(() => { wordPercentRef.current = wordPercent; }, [wordPercent]);
+            useEffect(() => { sentPercentRef.current = sentPercent; }, [sentPercent]);
+            useEffect(() => { selectedLetterRef.current = selectedLetter; }, [selectedLetter]);
+            useEffect(() => { focusedOptionIndexRef.current = focusedOptionIndex; }, [focusedOptionIndex]);
+            useEffect(() => { isListeningWordRef.current = isListeningWord; }, [isListeningWord]);
+            useEffect(() => { isListeningSentRef.current = isListeningSent; }, [isListeningSent]);
+
+            useEffect(() => { setFocusedOptionIndex(0); }, [fillIndex, activeTab]);
+
+            const speakText = (text) => {
+                if (!text) return;
+                const encodedText = encodeURIComponent(text);
+                const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q=${encodedText}`;
+                const audio = new Audio(audioUrl);
+                audio.play().catch(() => {
+                    if ('speechSynthesis' in window) {
+                        window.speechSynthesis.cancel();
+                        const utterance = new SpeechSynthesisUtterance(text);
+                        utterance.lang = 'vi-VN';
+                        utterance.rate = 0.8;
+                        window.speechSynthesis.speak(utterance);
+                    }
+                });
+            };
+
+            useEffect(() => {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (SpeechRecognition) {
+                    const rec = new SpeechRecognition();
+                    rec.lang = 'vi-VN';
+                    rec.interimResults = false;
+                    rec.maxAlternatives = 1;
+
+                    rec.onstart = () => {
+                        if (activeTabRef.current === 'wordRead') {
+                            setIsListeningWord(true);
+                            setWordPercent(null);
+                            setSpokenWord("");
+                        }
+                        if (activeTabRef.current === 'sentenceRead') {
+                            setIsListeningSent(true);
+                            setSentPercent(null);
+                            setSpokenSent("");
+                        }
+                    };
+
+                    rec.onend = () => {
+                        setIsListeningWord(false);
+                        setIsListeningSent(false);
+                    };
+
+                    rec.onresult = (event) => {
+                        const transcript = event.results[0][0].transcript;
+                        if (activeTabRef.current === 'wordRead') {
+                            handleWordRecognized(transcript);
+                        } else if (activeTabRef.current === 'sentenceRead') {
+                            handleSentenceRecognized(transcript);
+                        }
+                    };
+
+                    rec.onerror = () => {
+                        setIsListeningWord(false);
+                        setIsListeningSent(false);
+                    };
+
+                    recognitionRef.current = rec;
+                }
+            }, [data, wordIndex, sentIndex]);
+
+            const toggleListening = () => {
+                if (!recognitionRef.current) {
+                    alert("Trình duyệt không hỗ trợ nhận diện giọng nói. Hãy dùng Chrome hoặc Edge!");
+                    return;
+                }
+                try {
+                    if (activeTab === 'wordRead') {
+                        if (isListeningWordRef.current) recognitionRef.current.stop();
+                        else recognitionRef.current.start();
+                    } else if (activeTab === 'sentenceRead') {
+                        if (isListeningSentRef.current) recognitionRef.current.stop();
+                        else recognitionRef.current.start();
+                    }
+                } catch (e) {
+                    console.log("Mic toggling error:", e);
+                }
+            };
+
+            const handleWordRecognized = (transcript) => {
+                const percent = calculateWordScore(transcript, data.readingWords[wordIndex]);
+                setSpokenWord(transcript);
+                setWordPercent(percent);
+                if (percent >= passThreshold) setWordScore(prev => prev + 1);
+            };
+
+            const handleSentenceRecognized = (transcript) => {
+                const percent = calculateSentenceScore(transcript, data.readingSentences[sentIndex]);
+                setSpokenSent(transcript);
+                setSentPercent(percent);
+                if (percent >= passThreshold) setSentScore(prev => prev + 1);
+            };
+
+            const nextWord = () => {
+                setWordPercent(null);
+                setSpokenWord("");
+                if (wordIndex < data.readingWords.length - 1) setWordIndex(prev => prev + 1);
+            };
+
+            const retryWord = () => {
+                setWordPercent(null);
+                setSpokenWord("");
+            };
+
+            const nextSentence = () => {
+                setSentPercent(null);
+                setSpokenSent("");
+                if (sentIndex < data.readingSentences.length - 1) setSentIndex(prev => prev + 1);
+            };
+
+            const retrySentence = () => {
+                setSentPercent(null);
+                setSpokenSent("");
+            };
+
+            const nextFill = () => {
+                setSelectedLetter(null);
+                setFocusedOptionIndex(0);
+                if (fillIndex < data.fillLetters.length - 1) setFillIndex(prev => prev + 1);
+            };
+
+            const selectCurrentFillOption = () => {
+                const currentQuestion = data.fillLetters[fillIndex];
+                const option = currentQuestion.options[focusedOptionIndexRef.current];
+                if (!selectedLetterRef.current) {
+                    setSelectedLetter(option);
+                    if (option === currentQuestion.answer) setFillScore(prev => prev + 1);
+                }
+            };
+
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+                    if (e.code === 'Space') {
+                        e.preventDefault(); 
+                        if (activeTabRef.current === 'wordRead') {
+                            if (wordPercentRef.current !== null) nextWord();
+                            else toggleListening();
+                        } else if (activeTabRef.current === 'sentenceRead') {
+                            if (sentPercentRef.current !== null) nextSentence();
+                            else toggleListening();
+                        } else if (activeTabRef.current === 'fillLetter') {
+                            if (selectedLetterRef.current !== null) nextFill();
+                            else {
+                                const totalOptions = data.fillLetters[fillIndex].options.length;
+                                setFocusedOptionIndex(prev => (prev + 1) % totalOptions);
+                            }
+                        }
+                    } else if (e.code === 'Enter') {
+                        e.preventDefault();
+                        if (activeTabRef.current === 'wordRead') {
+                            if (wordPercentRef.current !== null) retryWord();
+                        } else if (activeTabRef.current === 'sentenceRead') {
+                            if (sentPercentRef.current !== null) retrySentence();
+                        } else if (activeTabRef.current === 'fillLetter') {
+                            if (selectedLetterRef.current !== null) nextFill();
+                            else selectCurrentFillOption();
+                        }
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [data, wordIndex, sentIndex, fillIndex]);
+
+            return (
+                <div className="max-w-3xl mx-auto">
+                    {/* Header Nav */}
+                    <header className="kid-card p-4 mb-6 flex flex-wrap items-center justify-between gap-3 bg-white">
+                        <h1 className="text-2xl font-black text-sky-500 flex items-center gap-2">
+                            <span>🎒</span> Tiếng Việt 1
+                        </h1>
+                        <nav className="flex flex-wrap gap-2">
+                            <button 
+                                onClick={() => setActiveTab('wordRead')} 
+                                className={`px-4 py-2 rounded-xl font-bold btn-3d ${activeTab === 'wordRead' ? 'bg-pink-500 text-white border-pink-700' : 'bg-pink-100 text-pink-600 border-pink-300'}`}
+                            >
+                                🔊 1. Tập Đọc Từ
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('sentenceRead')} 
+                                className={`px-4 py-2 rounded-xl font-bold btn-3d ${activeTab === 'sentenceRead' ? 'bg-emerald-500 text-white border-emerald-700' : 'bg-emerald-100 text-emerald-600 border-emerald-300'}`}
+                            >
+                                📖 2. Đọc Câu (AI)
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('fillLetter')} 
+                                className={`px-4 py-2 rounded-xl font-bold btn-3d ${activeTab === 'fillLetter' ? 'bg-amber-500 text-white border-amber-700' : 'bg-amber-100 text-amber-600 border-amber-300'}`}
+                            >
+                                ✍️ 3. Điền Chữ Cái
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('admin')} 
+                                className={`px-4 py-2 rounded-xl font-bold btn-3d ${activeTab === 'admin' ? 'bg-slate-700 text-white border-slate-900' : 'bg-slate-200 text-slate-700 border-slate-400'}`}
+                            >
+                                ⚙️ Giáo Viên
+                            </button>
+                        </nav>
+                    </header>
+
+                    {/* BÀI 1: TẬP ĐỌC TỪ */}
+                    {activeTab === 'wordRead' && (
+                        <div className="kid-card p-8 text-center max-w-xl mx-auto">
+                            <div className="flex justify-between text-sm font-bold text-slate-400 mb-2">
+                                <span>Từ {wordIndex + 1} / {data.readingWords.length}</span>
+                                <span>Đúng: {wordScore} từ</span>
+                            </div>
+
+                            <p className="text-slate-500 font-bold mb-2">Bé bấm nghe AI đánh vần rồi đọc theo nhé:</p>
+                            
+                            <div className="text-6xl font-black text-sky-600 my-4 py-6 bg-sky-50 rounded-2xl border-2 border-sky-200 shadow-inner">
+                                {data.readingWords[wordIndex].word}
+                            </div>
+
+                            <button 
+                                onClick={() => speakText(data.readingWords[wordIndex].spell)}
+                                className="mb-6 bg-purple-500 hover:bg-purple-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-purple-700 inline-flex items-center gap-2 text-lg"
+                            >
+                                🔊 AI đọc đánh vần mẫu
+                            </button>
+
+                            <p className="text-xs text-purple-600 font-bold mb-4">
+                                Gợi ý đánh vần: "{data.readingWords[wordIndex].spell}"
+                            </p>
+
+                            <button 
+                                onClick={toggleListening}
+                                className={`w-24 h-24 rounded-full text-4xl text-white font-bold mx-auto flex items-center justify-center transition-all ${isListeningWord ? 'bg-red-500 pulse-ring' : 'bg-pink-500 hover:bg-pink-400 btn-3d border-pink-700'}`}
+                            >
+                                {isListeningWord ? '🎙️' : '🎤'}
+                            </button>
+                            <p className="mt-3 text-sm font-bold text-slate-500">
+                                {isListeningWord ? "AI đang lắng nghe bé đọc..." : "Bấm Micro hoặc phím [SPACE] để đọc"}
+                            </p>
+
+                            {isListeningWord && (
+                                <div className="mt-6 p-4 rounded-xl border-2 bg-sky-50 border-sky-200 text-sky-700 font-bold text-lg">
+                                    <span>AI đang lắng nghe bé đọc</span><span className="dots-loading"></span>
+                                </div>
+                            )}
+
+                            {!isListeningWord && wordPercent !== null && (
+                                <div className="mt-6 p-4 rounded-xl border-2 bg-slate-50">
+                                    <p className="text-sm text-slate-500">
+                                        AI nghe được: <span className="font-bold text-slate-800 text-lg">"{spokenWord}"</span>
+                                    </p>
+                                    <p className="text-xs text-slate-400 mt-1 font-bold">Độ chính xác: {wordPercent}%</p>
+
+                                    {wordPercent >= perfectThreshold && (
+                                        <div className="text-green-600 font-black text-xl mt-2">🎉 Bé đọc chính xác lắm!</div>
+                                    )}
+                                    {wordPercent >= passThreshold && wordPercent < perfectThreshold && (
+                                        <div className="text-emerald-600 font-black text-xl mt-2">🎉 Bé đọc tốt lắm!</div>
+                                    )}
+                                    {wordPercent < passThreshold && (
+                                        <div className="text-red-500 font-bold text-lg mt-2">❌ Bé cần luyện đọc lại!</div>
+                                    )}
+
+                                    <div className="mt-6 flex flex-wrap justify-center gap-3">
+                                        <button 
+                                            onClick={retryWord}
+                                            className="bg-amber-500 hover:bg-amber-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-amber-700 text-base"
+                                        >
+                                            🔄 Làm lại (Phím Enter)
+                                        </button>
+                                        <button 
+                                            onClick={nextWord}
+                                            className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-emerald-700 text-base"
+                                        >
+                                            ➡️ Từ tiếp theo (Phím Space)
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* BÀI 2: ĐỌC CÂU */}
+                    {activeTab === 'sentenceRead' && (
+                        <div className="kid-card p-8 text-center max-w-xl mx-auto">
+                            <div className="flex justify-between text-sm font-bold text-slate-400 mb-2">
+                                <span>Câu {sentIndex + 1} / {data.readingSentences.length}</span>
+                                <span>Đúng: {sentScore} câu</span>
+                            </div>
+
+                            <p className="text-slate-500 font-bold mb-2">Bé hãy đọc to câu dưới đây:</p>
+                            
+                            <div className="text-3xl font-black text-emerald-700 my-6 p-6 bg-emerald-50 rounded-2xl border-2 border-emerald-200 leading-relaxed">
+                                "{data.readingSentences[sentIndex]}"
+                            </div>
+
+                            <button 
+                                onClick={() => speakText(data.readingSentences[sentIndex])}
+                                className="mb-6 bg-sky-500 hover:bg-sky-400 text-white font-bold py-2 px-5 rounded-full btn-3d border-sky-700 inline-flex items-center gap-2 text-base"
+                            >
+                                🔊 Nghe AI đọc mẫu câu
+                            </button>
+
+                            <br />
+
+                            <button 
+                                onClick={toggleListening}
+                                className={`w-24 h-24 rounded-full text-4xl text-white font-bold mx-auto flex items-center justify-center transition-all ${isListeningSent ? 'bg-red-500 pulse-ring' : 'bg-emerald-500 hover:bg-emerald-400 btn-3d border-emerald-700'}`}
+                            >
+                                {isListeningSent ? '🎙️' : '🎤'}
+                            </button>
+                            <p className="mt-3 text-sm font-bold text-slate-500">
+                                {isListeningSent ? "AI đang lắng nghe bé đọc câu..." : "Bấm Micro hoặc phím [SPACE] để đọc câu"}
+                            </p>
+
+                            {isListeningSent && (
+                                <div className="mt-6 p-4 rounded-xl border-2 bg-emerald-50 border-emerald-200 text-emerald-700 font-bold text-lg">
+                                    <span>AI đang lắng nghe bé đọc câu</span><span className="dots-loading"></span>
+                                </div>
+                            )}
+
+                            {!isListeningSent && sentPercent !== null && (
+                                <div className="mt-6 p-4 rounded-xl border-2 bg-slate-50">
+                                    <p className="text-sm text-slate-500">
+                                        AI nghe được: <span className="font-bold text-slate-800 text-lg">"{spokenSent}"</span>
+                                    </p>
+                                    <p className="text-xs text-slate-400 mt-1 font-bold">Độ chính xác: {sentPercent}%</p>
+
+                                    {sentPercent >= perfectThreshold && (
+                                        <div className="text-green-600 font-black text-xl mt-2">🎉 Bé đọc chính xác lắm!</div>
+                                    )}
+                                    {sentPercent >= passThreshold && sentPercent < perfectThreshold && (
+                                        <div className="text-emerald-600 font-black text-xl mt-2">🎉 Bé đọc tốt lắm!</div>
+                                    )}
+                                    {sentPercent < passThreshold && (
+                                        <div className="text-red-500 font-bold text-lg mt-2">❌ Bé cần luyện đọc lại!</div>
+                                    )}
+
+                                    <div className="mt-6 flex flex-wrap justify-center gap-3">
+                                        <button 
+                                            onClick={retrySentence}
+                                            className="bg-amber-500 hover:bg-amber-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-amber-700 text-base"
+                                        >
+                                            🔄 Làm lại (Phím Enter)
+                                        </button>
+                                        <button 
+                                            onClick={nextSentence}
+                                            className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-emerald-700 text-base"
+                                        >
+                                            ➡️ Câu tiếp theo (Phím Space)
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* BÀI 3: ĐIỀN CHỮ CÁI */}
+                    {activeTab === 'fillLetter' && (
+                        <div className="kid-card p-8 text-center max-w-xl mx-auto">
+                            <div className="flex justify-between text-sm font-bold text-slate-400 mb-2">
+                                <span>Câu {fillIndex + 1} / {data.fillLetters.length}</span>
+                                <span>Điểm: {fillScore}</span>
+                            </div>
+
+                            <p className="text-slate-500 font-bold mb-1">Chọn chữ cái đúng điền vào dấu ba chấm (...):</p>
+                            <p className="text-xs text-amber-600 font-bold mb-4">
+                                💡 Nhấn <span className="bg-amber-100 px-2 py-0.5 rounded border border-amber-300">SPACE</span> để di chuyển chọn • Nhấn <span className="bg-amber-100 px-2 py-0.5 rounded border border-amber-300">ENTER</span> để chọn
+                            </p>
+                            
+                            <div className="text-5xl font-black text-amber-600 my-6 py-6 bg-amber-50 rounded-2xl border-2 border-amber-200 tracking-widest">
+                                {data.fillLetters[fillIndex].display}
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-4 mb-6">
+                                {data.fillLetters[fillIndex].options.map((letter, idx) => {
+                                    const isFocused = focusedOptionIndex === idx && !selectedLetter;
+                                    const isSelected = selectedLetter === letter;
+                                    const isCorrect = letter === data.fillLetters[fillIndex].answer;
+
+                                    let styleClass = "bg-white border-2 border-amber-200 text-amber-800 hover:border-amber-400";
+                                    if (isFocused) styleClass = "option-focused text-amber-900 font-black";
+                                    if (selectedLetter) {
+                                        if (isSelected) {
+                                            styleClass = isCorrect ? 'bg-green-500 text-white border-green-700' : 'bg-red-500 text-white border-red-700';
+                                        } else {
+                                            styleClass = 'bg-slate-100 text-slate-400 border-slate-200 opacity-50';
+                                        }
+                                    }
+
+                                    return (
+                                        <button 
+                                            key={idx}
+                                            onClick={() => {
+                                                setFocusedOptionIndex(idx);
+                                                if (!selectedLetter) {
+                                                    setSelectedLetter(letter);
+                                                    if (isCorrect) setFillScore(prev => prev + 1);
+                                                }
+                                            }}
+                                            className={`py-4 rounded-2xl font-black text-2xl btn-3d transition-all ${styleClass}`}
+                                        >
+                                            {letter}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {selectedLetter && (
+                                <div className="mb-6">
+                                    {selectedLetter === data.fillLetters[fillIndex].answer ? (
+                                        <p className="text-green-600 font-bold text-xl">🎉 Đúng rồi! Từ hoàn chỉnh là: <span className="underline">{data.fillLetters[fillIndex].fullWord}</span></p>
+                                    ) : (
+                                        <p className="text-red-500 font-bold text-xl">❌ Sai rồi! Đáp án đúng là chữ "{data.fillLetters[fillIndex].answer}"</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {selectedLetter && (
+                                <button 
+                                    onClick={nextFill}
+                                    className="bg-amber-500 text-white font-bold py-3 px-8 rounded-full btn-3d border-amber-700 text-lg"
+                                >
+                                    {fillIndex < data.fillLetters.length - 1 ? "Câu tiếp theo ➡️ (Phím Space/Enter)" : "Xem điểm số 🏆"}
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* BẢNG GIÁO VIÊN */}
+                    {activeTab === 'admin' && (
+                        <div className="kid-card p-6 bg-white space-y-6">
+                            <h2 className="text-2xl font-black text-slate-800 border-b pb-3">⚙️ Bảng Cấu Hình & Nhập Liệu Cho Giáo Viên</h2>
+                            
+                            {/* KHU VỰC ĐIỀU CHỈNH % ĐIỂM SỐ */}
+                            <div className="bg-sky-50 p-4 rounded-2xl border-2 border-sky-200">
+                                <h3 className="font-black text-sky-800 mb-3 flex items-center gap-2 text-lg">
+                                    <span>🎯</span> Cài đặt mức % Đạt cho bài đọc AI
+                                </h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">
+                                            Ngưỡng Đạt ("🎉 Bé đọc tốt lắm!"):
+                                        </label>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="number" 
+                                                min="1" 
+                                                max="100"
+                                                value={passThreshold}
+                                                onChange={(e) => setPassThreshold(Number(e.target.value))}
+                                                className="w-24 p-2 border-2 border-sky-300 rounded-xl font-bold text-center text-sky-900 bg-white"
+                                            />
+                                            <span className="font-bold text-slate-600">%</span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-1">Dưới mức này AI sẽ báo: "❌ Bé cần luyện đọc lại!"</p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">
+                                            Ngưỡng Xuất sắc ("🎉 Bé đọc chính xác lắm!"):
+                                        </label>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="number" 
+                                                min="1" 
+                                                max="100"
+                                                value={perfectThreshold}
+                                                onChange={(e) => setPerfectThreshold(Number(e.target.value))}
+                                                className="w-24 p-2 border-2 border-sky-300 rounded-xl font-bold text-center text-sky-900 bg-white"
+                                            />
+                                            <span className="font-bold text-slate-600">%</span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-1">Mức điểm tối đa khen bé hoàn hảo.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block font-bold text-slate-700 mb-2">1. Nhập từ tập đọc (Định dạng: từ | đánh_vần):</label>
+                                <textarea 
+                                    rows="4"
+                                    className="w-full p-3 border-2 border-slate-300 rounded-xl font-bold text-sm focus:border-sky-400 outline-none"
+                                    defaultValue={data.readingWords.map(item => `${item.word} | ${item.spell}`).join('\n')}
+                                    onChange={(e) => {
+                                        const lines = e.target.value.split('\n').filter(l => l.trim() !== "");
+                                        const newWords = lines.map(line => {
+                                            const [w, s] = line.split('|');
+                                            return { word: w ? w.trim() : "", spell: s ? s.trim() : w.trim() };
+                                        });
+                                        setData({...data, readingWords: newWords});
+                                    }}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block font-bold text-slate-700 mb-2">2. Nhập câu đọc ngắn (Mỗi câu trên 1 dòng):</label>
+                                <textarea 
+                                    rows="4"
+                                    className="w-full p-3 border-2 border-slate-300 rounded-xl font-bold text-sm focus:border-sky-400 outline-none"
+                                    defaultValue={data.readingSentences.join('\n')}
+                                    onChange={(e) => {
+                                        const newSentences = e.target.value.split('\n').filter(s => s.trim() !== "");
+                                        setData({...data, readingSentences: newSentences});
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

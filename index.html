@@ -48,7 +48,7 @@
         }
     </style>
 </head>
-<body class="p-2 sm:p-6">
+<body class="p-2 sm:p-6 min-h-screen">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -180,7 +180,6 @@
         const speakText = async (text) => {
             if (!text) return;
 
-            // Dừng âm thanh đang phát trước đó
             if (window.responsiveVoice && window.responsiveVoice.isPlaying()) {
                 window.responsiveVoice.cancel();
             }
@@ -189,13 +188,11 @@
                 window.currentAudio = null;
             }
 
-            // Phương án 1: Dùng ResponsiveVoice (Không bị chặn CORS)
             if (window.responsiveVoice) {
                 window.responsiveVoice.speak(text, "Vietnamese Female", { rate: 0.85 });
                 return;
             }
 
-            // Phương án 2 Dự phòng: Gọi API SoundOfText trung gian
             try {
                 const response = await fetch('https://api.soundoftext.com/sounds', {
                     method: 'POST',
@@ -254,6 +251,7 @@
             const focusedOptionIndexRef = useRef(focusedOptionIndex);
             const isListeningWordRef = useRef(isListeningWord);
             const isListeningSentRef = useRef(isListeningSent);
+            const passThresholdRef = useRef(passThreshold);
 
             useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
             useEffect(() => { wordPercentRef.current = wordPercent; }, [wordPercent]);
@@ -262,6 +260,7 @@
             useEffect(() => { focusedOptionIndexRef.current = focusedOptionIndex; }, [focusedOptionIndex]);
             useEffect(() => { isListeningWordRef.current = isListeningWord; }, [isListeningWord]);
             useEffect(() => { isListeningSentRef.current = isListeningSent; }, [isListeningSent]);
+            useEffect(() => { passThresholdRef.current = passThreshold; }, [passThreshold]);
 
             useEffect(() => { setFocusedOptionIndex(0); }, [fillIndex, activeTab]);
 
@@ -315,10 +314,10 @@
                     return;
                 }
                 try {
-                    if (activeTab === 'wordRead') {
+                    if (activeTabRef.current === 'wordRead') {
                         if (isListeningWordRef.current) recognitionRef.current.stop();
                         else recognitionRef.current.start();
-                    } else if (activeTab === 'sentenceRead') {
+                    } else if (activeTabRef.current === 'sentenceRead') {
                         if (isListeningSentRef.current) recognitionRef.current.stop();
                         else recognitionRef.current.start();
                     }
@@ -341,10 +340,19 @@
                 if (percent >= passThreshold) setSentScore(prev => prev + 1);
             };
 
-            const nextWord = () => {
+            const nextWord = (force = false) => {
+                if (!force && wordPercentRef.current !== null && wordPercentRef.current < passThresholdRef.current) {
+                    return;
+                }
                 setWordPercent(null);
                 setSpokenWord("");
                 if (wordIndex < data.readingWords.length - 1) setWordIndex(prev => prev + 1);
+            };
+
+            const prevWord = () => {
+                setWordPercent(null);
+                setSpokenWord("");
+                if (wordIndex > 0) setWordIndex(prev => prev - 1);
             };
 
             const retryWord = () => {
@@ -352,10 +360,19 @@
                 setSpokenWord("");
             };
 
-            const nextSentence = () => {
+            const nextSentence = (force = false) => {
+                if (!force && sentPercentRef.current !== null && sentPercentRef.current < passThresholdRef.current) {
+                    return;
+                }
                 setSentPercent(null);
                 setSpokenSent("");
                 if (sentIndex < data.readingSentences.length - 1) setSentIndex(prev => prev + 1);
+            };
+
+            const prevSentence = () => {
+                setSentPercent(null);
+                setSpokenSent("");
+                if (sentIndex > 0) setSentIndex(prev => prev - 1);
             };
 
             const retrySentence = () => {
@@ -369,6 +386,12 @@
                 if (fillIndex < data.fillLetters.length - 1) setFillIndex(prev => prev + 1);
             };
 
+            const prevFill = () => {
+                setSelectedLetter(null);
+                setFocusedOptionIndex(0);
+                if (fillIndex > 0) setFillIndex(prev => prev - 1);
+            };
+
             const selectCurrentFillOption = () => {
                 const currentQuestion = data.fillLetters[fillIndex];
                 const option = currentQuestion.options[focusedOptionIndexRef.current];
@@ -378,6 +401,7 @@
                 }
             };
 
+            // Lắng nghe sự kiện bàn phím
             useEffect(() => {
                 const handleKeyDown = (e) => {
                     if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
@@ -385,11 +409,25 @@
                     if (e.code === 'Space') {
                         e.preventDefault(); 
                         if (activeTabRef.current === 'wordRead') {
-                            if (wordPercentRef.current !== null) nextWord();
-                            else toggleListening();
+                            if (isListeningWordRef.current) return;
+                            if (wordPercentRef.current === null) {
+                                toggleListening();
+                            } else if (wordPercentRef.current >= passThresholdRef.current) {
+                                nextWord();
+                            } else {
+                                retryWord();
+                                toggleListening();
+                            }
                         } else if (activeTabRef.current === 'sentenceRead') {
-                            if (sentPercentRef.current !== null) nextSentence();
-                            else toggleListening();
+                            if (isListeningSentRef.current) return;
+                            if (sentPercentRef.current === null) {
+                                toggleListening();
+                            } else if (sentPercentRef.current >= passThresholdRef.current) {
+                                nextSentence();
+                            } else {
+                                retrySentence();
+                                toggleListening();
+                            }
                         } else if (activeTabRef.current === 'fillLetter') {
                             if (selectedLetterRef.current !== null) nextFill();
                             else {
@@ -412,6 +450,29 @@
 
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [data, wordIndex, sentIndex, fillIndex]);
+
+            // Lắng nghe sự kiện nhấp màn hình (khoảng trống màu trắng bên trái/phải cho Giáo viên)
+            useEffect(() => {
+                const handleGlobalClick = (e) => {
+                    if (e.target.closest('button, input, textarea, a, select, option, label')) return;
+
+                    const width = window.innerWidth;
+                    const clickX = e.clientX;
+
+                    if (clickX > width / 2) {
+                        if (activeTabRef.current === 'wordRead') nextWord(true);
+                        else if (activeTabRef.current === 'sentenceRead') nextSentence(true);
+                        else if (activeTabRef.current === 'fillLetter') nextFill();
+                    } else {
+                        if (activeTabRef.current === 'wordRead') prevWord();
+                        else if (activeTabRef.current === 'sentenceRead') prevSentence();
+                        else if (activeTabRef.current === 'fillLetter') prevFill();
+                    }
+                };
+
+                window.addEventListener('click', handleGlobalClick);
+                return () => window.removeEventListener('click', handleGlobalClick);
             }, [data, wordIndex, sentIndex, fillIndex]);
 
             return (
@@ -457,7 +518,7 @@
                                 <span>Đúng: {wordScore} từ</span>
                             </div>
 
-                            <p className="text-slate-500 font-bold mb-2">Bé bấm nghe AI đánh vần rồi đọc theo nhé:</p>
+                            <p className="text-2xl font-black text-slate-800 border-b pb-3">Bé bấm nghe AI đánh vần rồi đọc theo nhé:</p>
                             
                             <div className="text-6xl font-black text-sky-600 my-4 py-6 bg-sky-50 rounded-2xl border-2 border-sky-200 shadow-inner">
                                 {data.readingWords[wordIndex].word}
@@ -492,9 +553,7 @@
 
                             {!isListeningWord && wordPercent !== null && (
                                 <div className="mt-6 p-4 rounded-xl border-2 bg-slate-50">
-                                    <p className="text-sm text-slate-500">
-                                        AI nghe được: <span className="font-bold text-slate-800 text-lg">"{spokenWord}"</span>
-                                    </p>
+
                                     <p className="text-xs text-slate-400 mt-1 font-bold">Độ chính xác: {wordPercent}%</p>
 
                                     {wordPercent >= perfectThreshold && (
@@ -514,12 +573,21 @@
                                         >
                                             🔄 Làm lại (Phím Enter)
                                         </button>
-                                        <button 
-                                            onClick={nextWord}
-                                            className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-emerald-700 text-base"
-                                        >
-                                            ➡️ Từ tiếp theo (Phím Space)
-                                        </button>
+                                        {wordPercent >= passThreshold ? (
+                                            <button 
+                                                onClick={() => nextWord()}
+                                                className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-emerald-700 text-base"
+                                            >
+                                                ➡️ Từ tiếp theo (Phím Space)
+                                            </button>
+                                        ) : (
+                                            <button 
+                                                onClick={() => { retryWord(); toggleListening(); }}
+                                                className="bg-pink-500 hover:bg-pink-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-pink-700 text-base"
+                                            >
+                                                🎤 Đọc lại (Phím Space)
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -534,7 +602,7 @@
                                 <span>Đúng: {sentScore} câu</span>
                             </div>
 
-                            <p className="text-slate-500 font-bold mb-2">Bé hãy đọc to câu dưới đây:</p>
+                            <p className="text-2xl font-black text-slate-800 border-b pb-3">Bé hãy đọc to câu dưới đây:</p>
                             
                             <div className="text-3xl font-black text-emerald-700 my-6 p-6 bg-emerald-50 rounded-2xl border-2 border-emerald-200 leading-relaxed">
                                 "{data.readingSentences[sentIndex]}"
@@ -567,9 +635,7 @@
 
                             {!isListeningSent && sentPercent !== null && (
                                 <div className="mt-6 p-4 rounded-xl border-2 bg-slate-50">
-                                    <p className="text-sm text-slate-500">
-                                        AI nghe được: <span className="font-bold text-slate-800 text-lg">"{spokenSent}"</span>
-                                    </p>
+    
                                     <p className="text-xs text-slate-400 mt-1 font-bold">Độ chính xác: {sentPercent}%</p>
 
                                     {sentPercent >= perfectThreshold && (
@@ -589,12 +655,21 @@
                                         >
                                             🔄 Làm lại (Phím Enter)
                                         </button>
-                                        <button 
-                                            onClick={nextSentence}
-                                            className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-emerald-700 text-base"
-                                        >
-                                            ➡️ Câu tiếp theo (Phím Space)
-                                        </button>
+                                        {sentPercent >= passThreshold ? (
+                                            <button 
+                                                onClick={() => nextSentence()}
+                                                className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-emerald-700 text-base"
+                                            >
+                                                ➡️ Câu tiếp theo (Phím Space)
+                                            </button>
+                                        ) : (
+                                            <button 
+                                                onClick={() => { retrySentence(); toggleListening(); }}
+                                                className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-emerald-700 text-base"
+                                            >
+                                                🎤 Đọc lại (Phím Space)
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -609,10 +684,7 @@
                                 <span>Điểm: {fillScore}</span>
                             </div>
 
-                            <p className="text-slate-500 font-bold mb-1">Chọn chữ cái đúng điền vào dấu ba chấm (...):</p>
-                            <p className="text-xs text-amber-600 font-bold mb-4">
-                                💡 Nhấn <span className="bg-amber-100 px-2 py-0.5 rounded border border-amber-300">SPACE</span> để di chuyển chọn • Nhấn <span className="bg-amber-100 px-2 py-0.5 rounded border border-amber-300">ENTER</span> để chọn
-                            </p>
+                            <p className="text-2xl font-black text-slate-800 border-b pb-3">Chọn chữ cái đúng điền vào dấu ba chấm (...):</p>
                             
                             <div className="text-5xl font-black text-amber-600 my-6 py-6 bg-amber-50 rounded-2xl border-2 border-amber-200 tracking-widest">
                                 {data.fillLetters[fillIndex].display}

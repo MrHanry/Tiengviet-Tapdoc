@@ -174,48 +174,43 @@
             return Math.min(100, percent);
         };
 
-        // Hàm AI phát âm (Ép chọn đúng gói giọng Tiếng Việt - Đặt ngoài App Component)
+        // HÀM ĐỌC GIỌNG TIẾNG VIỆT CHUẨN 100% (DÙNG GOOGLE TTS API)
         const speakText = (text) => {
-            if (!('speechSynthesis' in window)) {
-                alert("Trình duyệt không hỗ trợ giọng đọc AI.");
-                return;
+            if (!text) return;
+
+            // Dừng các âm thanh đang phát trước đó nếu có
+            if (window.currentAudio) {
+                window.currentAudio.pause();
+                window.currentAudio = null;
             }
 
-            window.speechSynthesis.cancel(); 
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'vi-VN'; 
-            utterance.rate = 0.75; 
+            // Gọi trực tiếp luồng Audio Tiếng Việt của Google
+            const encodedText = encodeURIComponent(text);
+            const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=vi&client=tw-ob`;
 
-            // Lấy danh sách giọng đọc hiện có trên trình duyệt
-            const voices = window.speechSynthesis.getVoices();
-            
-            // Tìm giọng đọc Tiếng Việt (vi-VN hoặc có chứa chữ 'vi')
-            const viVoice = voices.find(voice => 
-                voice.lang.includes('vi') || voice.lang.toLowerCase().includes('vietnam')
-            );
+            const audio = new Audio(googleTtsUrl);
+            audio.playbackRate = 0.85; // Phát chậm lại một chút cho học sinh lớp 1 dễ nghe
+            window.currentAudio = audio;
 
-            if (viVoice) {
-                utterance.voice = viVoice; // Gán trực tiếp giọng Tiếng Việt tìm được
-            }
-
-            window.speechSynthesis.speak(utterance);
+            audio.play().catch(err => {
+                // Dự phòng nếu trình duyệt chặn tự động phát Audio
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = 'vi-VN';
+                    utterance.rate = 0.75;
+                    window.speechSynthesis.speak(utterance);
+                }
+            });
         };
-
-        // Đảm bảo nạp xong danh sách giọng đọc khi chạy trên GitHub Pages
-        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-            window.speechSynthesis.getVoices();
-            window.speechSynthesis.onvoiceschanged = () => {
-                window.speechSynthesis.getVoices();
-            };
-        }
 
         const App = () => {
             const [data, setData] = useState(() => processInitialData(initialRawData));
             const [activeTab, setActiveTab] = useState('wordRead'); 
 
             // Cấu hình % từ Bảng giáo viên
-            const [passThreshold, setPassThreshold] = useState(85); // Ngưỡng Tốt
-            const [perfectThreshold, setPerfectThreshold] = useState(100); // Ngưỡng Xuất sắc
+            const [passThreshold, setPassThreshold] = useState(85); 
+            const [perfectThreshold, setPerfectThreshold] = useState(100); 
 
             // State Bài 1
             const [wordIndex, setWordIndex] = useState(0);

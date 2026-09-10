@@ -54,6 +54,9 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // Mật khẩu mặc định cho Bảng giáo viên (Có thể thay đổi tại đây)
+        const ADMIN_PASSWORD = "242424";
+
         // Hàm xáo trộn mảng phương án chọn
         const shuffleArray = (array) => {
             const arr = [...array];
@@ -218,6 +221,11 @@
             const [data, setData] = useState(() => processInitialData(initialRawData));
             const [activeTab, setActiveTab] = useState('wordRead'); 
 
+            // State Bảo mật Admin
+            const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+            const [adminPasswordInput, setAdminPasswordInput] = useState('');
+            const [passwordError, setPasswordError] = useState('');
+
             // Cấu hình % từ Bảng giáo viên
             const [passThreshold, setPassThreshold] = useState(85); 
             const [perfectThreshold, setPerfectThreshold] = useState(100); 
@@ -377,6 +385,18 @@
                 }
             };
 
+            // Hàm xác minh mật khẩu Giáo Viên
+            const handleAdminLogin = (e) => {
+                e.preventDefault();
+                if (adminPasswordInput === ADMIN_PASSWORD) {
+                    setIsAdminAuthenticated(true);
+                    setPasswordError('');
+                    setAdminPasswordInput('');
+                } else {
+                    setPasswordError('Mật khẩu không chính xác!');
+                }
+            };
+
             // Click vào khoảng trống hai bên màn hình để chuyển câu hỏi
             const handleBackgroundClick = (e) => {
                 if (e.target.closest('.kid-card') || e.target.closest('button') || e.target.closest('input') || e.target.closest('textarea')) {
@@ -493,25 +513,25 @@
                                     onClick={() => setActiveTab('wordRead')} 
                                     className={`px-4 py-2 rounded-xl font-bold btn-3d ${activeTab === 'wordRead' ? 'bg-pink-500 text-white border-pink-700' : 'bg-pink-100 text-pink-600 border-pink-300'}`}
                                 >
-                                    🔊 1. Tập Đọc Từ
+                                    🔊 1. Bài đọc Từ
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('sentenceRead')} 
                                     className={`px-4 py-2 rounded-xl font-bold btn-3d ${activeTab === 'sentenceRead' ? 'bg-emerald-500 text-white border-emerald-700' : 'bg-emerald-100 text-emerald-600 border-emerald-300'}`}
                                 >
-                                    📖 2. Đọc Câu (AI)
+                                    📖 2. Bài đọc Câu (AI)
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('fillLetter')} 
                                     className={`px-4 py-2 rounded-xl font-bold btn-3d ${activeTab === 'fillLetter' ? 'bg-amber-500 text-white border-amber-700' : 'bg-amber-100 text-amber-600 border-amber-300'}`}
                                 >
-                                    ✍️ 3. Điền Chữ Cái
+                                    ✍️ 3. Bài điền Chữ Cái
                                 </button>
                                 <button 
                                     onClick={() => setActiveTab('admin')} 
                                     className={`px-4 py-2 rounded-xl font-bold btn-3d ${activeTab === 'admin' ? 'bg-slate-700 text-white border-slate-900' : 'bg-slate-200 text-slate-700 border-slate-400'}`}
                                 >
-                                    ⚙️ Giáo Viên
+                                    🔒 Giáo Viên
                                 </button>
                             </nav>
                         </header>
@@ -524,7 +544,7 @@
                                     <span>Đúng: {wordScore} từ</span>
                                 </div>
 
-                                <p className="text-2xl font-black text-slate-800 border-b pb-3">Bé bấm nghe AI đánh vần rồi đọc theo nhé:</p>
+                                <p className="text-2xl font-black text-slate-800 border-b pb-3">Bé hãy đánh vần to tiếng dưới đây:</p>
                                 
                                 <div className="text-6xl font-black text-sky-600 my-4 py-6 bg-sky-50 rounded-2xl border-2 border-sky-200 shadow-inner">
                                     {data.readingWords[wordIndex].word}
@@ -752,82 +772,128 @@
 
                         {/* BẢNG GIÁO VIÊN */}
                         {activeTab === 'admin' && (
-                            <div className="kid-card p-6 bg-white space-y-6">
-                                <h2 className="text-2xl font-black text-slate-800 border-b pb-3">⚙️ Bảng Cấu Hình & Nhập Liệu Cho Giáo Viên</h2>
-                                
-                                {/* KHU VỰC ĐIỀU CHỈNH % ĐIỂM SỐ */}
-                                <div className="bg-sky-50 p-4 rounded-2xl border-2 border-sky-200">
-                                    <h3 className="font-black text-sky-800 mb-3 flex items-center gap-2 text-lg">
-                                        <span>🎯</span> Cài đặt mức % Đạt cho bài đọc AI
-                                    </h3>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-bold text-slate-700 mb-1">
-                                                Ngưỡng Đạt ("🎉 Bé đọc tốt lắm!"):
-                                            </label>
-                                            <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="number" 
-                                                    min="1" 
-                                                    max="100"
-                                                    value={passThreshold}
-                                                    onChange={(e) => setPassThreshold(Number(e.target.value))}
-                                                    className="w-24 p-2 border-2 border-sky-300 rounded-xl font-bold text-center text-sky-900 bg-white"
-                                                />
-                                                <span className="font-bold text-slate-600">%</span>
+                            <div className="kid-card p-6 bg-white max-w-xl mx-auto">
+                                {!isAdminAuthenticated ? (
+                                    /* Khung nhập mật khẩu bảo mật */
+                                    <div className="text-center py-6 space-y-4">
+                                        <div className="text-5xl">🔒</div>
+                                        <h2 className="text-2xl font-black text-slate-800">Khu Vực Dành Cho Giáo Viên</h2>
+                                        <p className="text-slate-500 font-bold text-sm">Vui lòng nhập mật khẩu để truy cập và chỉnh sửa bài học</p>
+                                        
+                                        <form onSubmit={handleAdminLogin} className="space-y-4 max-w-xs mx-auto pt-2">
+                                            <input 
+                                                type="password"
+                                                value={adminPasswordInput}
+                                                onChange={(e) => setAdminPasswordInput(e.target.value)}
+                                                placeholder="Password"
+                                                className="w-full p-3 border-2 border-slate-300 rounded-xl font-bold text-center focus:border-slate-600 outline-none"
+                                                autoFocus
+                                            />
+                                            {passwordError && (
+                                                <p className="text-red-500 text-sm font-bold">{passwordError}</p>
+                                            )}
+                                            <button 
+                                                type="submit"
+                                                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl btn-3d border-slate-950"
+                                            >
+                                                🔓 Xác nhận
+                                            </button>
+                                        </form>
+                                    </div>
+                                ) : (
+                                    /* Nội dung Bảng giáo viên sau khi xác minh */
+                                    <div className="space-y-6">
+                                        <div className="flex justify-between items-center border-b pb-3">
+                                            <h2 className="text-2xl font-black text-slate-800">⚙️ Bảng Cấu Hình & Nhập Liệu</h2>
+                                            <button 
+                                                onClick={() => setIsAdminAuthenticated(false)}
+                                                className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1.5 rounded-lg border border-red-300"
+                                            >
+                                                🔒 Khóa lại
+                                            </button>
+                                        </div>
+                                        
+                                        {/* KHU VỰC ĐIỀU CHỈNH % ĐIỂM SỐ */}
+                                        <div className="bg-sky-50 p-4 rounded-2xl border-2 border-sky-200">
+                                            <h3 className="font-black text-sky-800 mb-3 flex items-center gap-2 text-lg">
+                                                <span>🎯</span> Cài đặt mức % Đạt cho bài đọc
+                                            </h3>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-bold text-slate-700 mb-1">
+                                                        Ngưỡng Đạt 
+                                                    </label>
+                                                    <label className="block text-sm font-bold text-slate-700 mb-1">
+                                                        ("🎉 Bé đọc tốt lắm!"):
+                                                    </label>
+                                                    <div className="flex items-center gap-2">
+                                                        <input 
+                                                            type="number" 
+                                                            min="1" 
+                                                            max="100"
+                                                            value={passThreshold}
+                                                            onChange={(e) => setPassThreshold(Number(e.target.value))}
+                                                            className="w-24 p-2 border-2 border-sky-300 rounded-xl font-bold text-center text-sky-900 bg-white"
+                                                        />
+                                                        <span className="font-bold text-slate-600">%</span>
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 mt-1">Dưới mức này AI sẽ báo đọc lại!</p>
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-sm font-bold text-slate-700 mb-1">
+                                                        Ngưỡng Xuất sắc
+                                                    </label>
+                                                    <label className="block text-sm font-bold text-slate-700 mb-1">
+                                                        ("🎉 Bé đọc chính xác lắm!"):
+                                                    </label>
+                                                    <div className="flex items-center gap-2">
+                                                        <input 
+                                                            type="number" 
+                                                            min="1" 
+                                                            max="100"
+                                                            value={perfectThreshold}
+                                                            onChange={(e) => setPerfectThreshold(Number(e.target.value))}
+                                                            className="w-24 p-2 border-2 border-sky-300 rounded-xl font-bold text-center text-sky-900 bg-white"
+                                                        />
+                                                        <span className="font-bold text-slate-600">%</span>
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 mt-1">Mức điểm tối đa khen bé hoàn hảo.</p>
+                                                </div>
                                             </div>
-                                            <p className="text-xs text-slate-500 mt-1">Dưới mức này AI sẽ báo đọc lại!</p>
                                         </div>
 
                                         <div>
-                                            <label className="block text-sm font-bold text-slate-700 mb-1">
-                                                Ngưỡng Xuất sắc ("🎉 Bé đọc chính xác lắm!"):
-                                            </label>
-                                            <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="number" 
-                                                    min="1" 
-                                                    max="100"
-                                                    value={perfectThreshold}
-                                                    onChange={(e) => setPerfectThreshold(Number(e.target.value))}
-                                                    className="w-24 p-2 border-2 border-sky-300 rounded-xl font-bold text-center text-sky-900 bg-white"
-                                                />
-                                                <span className="font-bold text-slate-600">%</span>
-                                            </div>
-                                            <p className="text-xs text-slate-500 mt-1">Mức điểm tối đa khen bé hoàn hảo.</p>
+                                            <label className="block font-bold text-slate-700 mb-2">1. Nhập từ tập đọc (Định dạng: từ | đánh_vần):</label>
+                                            <textarea 
+                                                rows="4"
+                                                className="w-full p-3 border-2 border-slate-300 rounded-xl font-bold text-sm focus:border-sky-400 outline-none"
+                                                defaultValue={data.readingWords.map(item => `${item.word} | ${item.spell}`).join('\n')}
+                                                onChange={(e) => {
+                                                    const lines = e.target.value.split('\n').filter(l => l.trim() !== "");
+                                                    const newWords = lines.map(line => {
+                                                        const [w, s] = line.split('|');
+                                                        return { word: w ? w.trim() : "", spell: s ? s.trim() : w.trim() };
+                                                    });
+                                                    setData({...data, readingWords: newWords});
+                                                }}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block font-bold text-slate-700 mb-2">2. Nhập câu đọc ngắn (Mỗi câu trên 1 dòng):</label>
+                                            <textarea 
+                                                rows="4"
+                                                className="w-full p-3 border-2 border-slate-300 rounded-xl font-bold text-sm focus:border-sky-400 outline-none"
+                                                defaultValue={data.readingSentences.join('\n')}
+                                                onChange={(e) => {
+                                                    const newSentences = e.target.value.split('\n').filter(s => s.trim() !== "");
+                                                    setData({...data, readingSentences: newSentences});
+                                                }}
+                                            />
                                         </div>
                                     </div>
-                                </div>
-
-                                <div>
-                                    <label className="block font-bold text-slate-700 mb-2">1. Nhập từ tập đọc (Định dạng: từ | đánh_vần):</label>
-                                    <textarea 
-                                        rows="4"
-                                        className="w-full p-3 border-2 border-slate-300 rounded-xl font-bold text-sm focus:border-sky-400 outline-none"
-                                        defaultValue={data.readingWords.map(item => `${item.word} | ${item.spell}`).join('\n')}
-                                        onChange={(e) => {
-                                            const lines = e.target.value.split('\n').filter(l => l.trim() !== "");
-                                            const newWords = lines.map(line => {
-                                                const [w, s] = line.split('|');
-                                                return { word: w ? w.trim() : "", spell: s ? s.trim() : w.trim() };
-                                            });
-                                            setData({...data, readingWords: newWords});
-                                        }}
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block font-bold text-slate-700 mb-2">2. Nhập câu đọc ngắn (Mỗi câu trên 1 dòng):</label>
-                                    <textarea 
-                                        rows="4"
-                                        className="w-full p-3 border-2 border-slate-300 rounded-xl font-bold text-sm focus:border-sky-400 outline-none"
-                                        defaultValue={data.readingSentences.join('\n')}
-                                        onChange={(e) => {
-                                            const newSentences = e.target.value.split('\n').filter(s => s.trim() !== "");
-                                            setData({...data, readingSentences: newSentences});
-                                        }}
-                                    />
-                                </div>
+                                )}
                             </div>
                         )}
                     </div>

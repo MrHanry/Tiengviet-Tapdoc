@@ -222,21 +222,37 @@
 
             useEffect(() => { setFocusedOptionIndex(0); }, [fillIndex, activeTab]);
 
-            const speakText = (text) => {
-                if (!text) return;
-                const encodedText = encodeURIComponent(text);
-                const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q=${encodedText}`;
-                const audio = new Audio(audioUrl);
-                audio.play().catch(() => {
-                    if ('speechSynthesis' in window) {
-                        window.speechSynthesis.cancel();
-                        const utterance = new SpeechSynthesisUtterance(text);
-                        utterance.lang = 'vi-VN';
-                        utterance.rate = 0.8;
-                        window.speechSynthesis.speak(utterance);
-                    }
-                });
-            };
+// Hàm AI phát âm (Ép chọn đúng gói giọng Tiếng Việt)
+const speakText = (text) => {
+    if (!('speechSynthesis' in window)) {
+        alert("Trình duyệt không hỗ trợ giọng đọc AI.");
+        return;
+    }
+
+    window.speechSynthesis.cancel(); 
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'vi-VN'; 
+    utterance.rate = 0.75; 
+
+    // Lấy danh sách giọng đọc hiện có trên trình duyệt
+    const voices = window.speechSynthesis.getVoices();
+    
+    // Tìm giọng đọc Tiếng Việt (vi-VN hoặc có chứa chữ 'vi')
+    const viVoice = voices.find(voice => voice.lang.includes('vi') || voice.lang.toLowerCase().includes('vietnam'));
+
+    if (viVoice) {
+        utterance.voice = viVoice; // Gán trực tiếp giọng Tiếng Việt tìm được
+    }
+
+    window.speechSynthesis.speak(utterance);
+};
+
+// Đảm bảo nạp xong danh sách giọng đọc khi chạy trên GitHub Pages
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+    };
+}
 
             useEffect(() => {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;

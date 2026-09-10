@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
     
+    <!-- DÒNG NÀY SỬA LỖI ĐỌC TIẾNG ANH TRÊN GITHUB PAGES -->
+    <meta name="referrer" content="no-referrer">
+    
     <title>Học Tiếng Việt Lớp 1 - AI Đánh Vần & Chấm Đọc</title>
     
     <!-- Tailwind CSS CDN -->
@@ -174,31 +177,36 @@
             return Math.min(100, percent);
         };
 
-        // HÀM ĐỌC GIỌNG TIẾNG VIỆT CHUẨN 100% (DÙNG GOOGLE TTS API)
+        // HÀM ĐỌC GIỌNG TIẾNG VIỆT ĐÃ KHẮC PHỤC TRÊN GITHUB PAGES
         const speakText = (text) => {
             if (!text) return;
 
-            // Dừng các âm thanh đang phát trước đó nếu có
             if (window.currentAudio) {
                 window.currentAudio.pause();
                 window.currentAudio = null;
             }
 
-            // Gọi trực tiếp luồng Audio Tiếng Việt của Google
+            // Gọi API Google TTS với đường dẫn bypass Referrer
             const encodedText = encodeURIComponent(text);
             const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=vi&client=tw-ob`;
 
-            const audio = new Audio(googleTtsUrl);
-            audio.playbackRate = 0.85; // Phát chậm lại một chút cho học sinh lớp 1 dễ nghe
+            const audio = new Audio();
+            audio.src = googleTtsUrl;
+            audio.playbackRate = 0.85;
             window.currentAudio = audio;
 
             audio.play().catch(err => {
-                // Dự phòng nếu trình duyệt chặn tự động phát Audio
+                // Phương án dự phòng 2: Gọi Web Speech API ép giọng chuẩn vi-VN
                 if ('speechSynthesis' in window) {
                     window.speechSynthesis.cancel();
                     const utterance = new SpeechSynthesisUtterance(text);
                     utterance.lang = 'vi-VN';
-                    utterance.rate = 0.75;
+                    utterance.rate = 0.8;
+
+                    const voices = window.speechSynthesis.getVoices();
+                    const viVoice = voices.find(v => v.lang.includes('vi') || v.lang.includes('VI'));
+                    if (viVoice) utterance.voice = viVoice;
+
                     window.speechSynthesis.speak(utterance);
                 }
             });

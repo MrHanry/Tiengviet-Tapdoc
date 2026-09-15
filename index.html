@@ -54,8 +54,13 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // Mật khẩu mặc định cho Bảng giáo viên (Có thể thay đổi tại đây)
+        // Mật khẩu mặc định cho Bảng giáo viên
         const ADMIN_PASSWORD = "2002";
+
+        // Keys lưu trữ vào bộ nhớ trình duyệt
+        const STORAGE_KEY_DATA = "tv1_app_data_v1";
+        const STORAGE_KEY_PASS = "tv1_pass_threshold_v1";
+        const STORAGE_KEY_PERFECT = "tv1_perfect_threshold_v1";
 
         // Hàm xáo trộn mảng phương án chọn
         const shuffleArray = (array) => {
@@ -218,7 +223,19 @@
         };
 
         const App = () => {
-            const [data, setData] = useState(() => processInitialData(initialRawData));
+            // Tải dữ liệu từ LocalStorage nếu có, nếu không lấy dữ liệu mặc định
+            const [data, setData] = useState(() => {
+                const saved = localStorage.getItem(STORAGE_KEY_DATA);
+                if (saved) {
+                    try {
+                        return JSON.parse(saved);
+                    } catch (e) {
+                        console.error("Lỗi parse localStorage:", e);
+                    }
+                }
+                return processInitialData(initialRawData);
+            });
+
             const [activeTab, setActiveTab] = useState('wordRead'); 
 
             // State Bảo mật Admin
@@ -226,9 +243,28 @@
             const [adminPasswordInput, setAdminPasswordInput] = useState('');
             const [passwordError, setPasswordError] = useState('');
 
-            // Cấu hình % từ Bảng giáo viên
-            const [passThreshold, setPassThreshold] = useState(85); 
-            const [perfectThreshold, setPerfectThreshold] = useState(100); 
+            // Cấu hình % từ Bảng giáo viên (Lưu LocalStorage)
+            const [passThreshold, setPassThreshold] = useState(() => {
+                const saved = localStorage.getItem(STORAGE_KEY_PASS);
+                return saved !== null ? Number(saved) : 85;
+            }); 
+            const [perfectThreshold, setPerfectThreshold] = useState(() => {
+                const saved = localStorage.getItem(STORAGE_KEY_PERFECT);
+                return saved !== null ? Number(saved) : 100;
+            }); 
+
+            // Tự động lưu dữ liệu mỗi khi có thay đổi
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(data));
+            }, [data]);
+
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEY_PASS, passThreshold);
+            }, [passThreshold]);
+
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEY_PERFECT, perfectThreshold);
+            }, [perfectThreshold]);
 
             // State Bài 1
             const [wordIndex, setWordIndex] = useState(0);
@@ -335,6 +371,7 @@
             };
 
             const handleWordRecognized = (transcript) => {
+                if (!data.readingWords[wordIndex]) return;
                 const percent = calculateWordScore(transcript, data.readingWords[wordIndex]);
                 setSpokenWord(transcript);
                 setWordPercent(percent);
@@ -342,6 +379,7 @@
             };
 
             const handleSentenceRecognized = (transcript) => {
+                if (!data.readingSentences[sentIndex]) return;
                 const percent = calculateSentenceScore(transcript, data.readingSentences[sentIndex]);
                 setSpokenSent(transcript);
                 setSentPercent(percent);
@@ -378,6 +416,7 @@
 
             const selectCurrentFillOption = () => {
                 const currentQuestion = data.fillLetters[fillIndex];
+                if (!currentQuestion) return;
                 const option = currentQuestion.options[focusedOptionIndexRef.current];
                 if (!selectedLetterRef.current) {
                     setSelectedLetter(option);
@@ -394,6 +433,23 @@
                     setAdminPasswordInput('');
                 } else {
                     setPasswordError('Mật khẩu không chính xác!');
+                }
+            };
+
+            // Khôi phục lại dữ liệu gốc ban đầu
+            const handleResetDefault = () => {
+                if (window.confirm("Bạn có chắc chắn muốn khôi phục lại dữ liệu bài học mặc định ban đầu không?")) {
+                    const defaultData = processInitialData(initialRawData);
+                    setData(defaultData);
+                    setPassThreshold(85);
+                    setPerfectThreshold(100);
+                    localStorage.removeItem(STORAGE_KEY_DATA);
+                    localStorage.removeItem(STORAGE_KEY_PASS);
+                    localStorage.removeItem(STORAGE_KEY_PERFECT);
+                    setWordIndex(0);
+                    setSentIndex(0);
+                    setFillIndex(0);
+                    alert("Đã khôi phục dữ liệu mặc định thành công!");
                 }
             };
 
@@ -468,15 +524,17 @@
                         } else if (activeTabRef.current === 'fillLetter') {
                             if (selectedLetterRef.current !== null) {
                                 const currentQuestion = data.fillLetters[fillIndex];
-                                if (selectedLetterRef.current === currentQuestion.answer) {
+                                if (currentQuestion && selectedLetterRef.current === currentQuestion.answer) {
                                     nextFill();
                                 } else {
-                                    // Chọn sai -> Bấm Space để chọn lại
                                     setSelectedLetter(null);
                                 }
                             } else {
-                                const totalOptions = data.fillLetters[fillIndex].options.length;
-                                setFocusedOptionIndex(prev => (prev + 1) % totalOptions);
+                                const currentQuestion = data.fillLetters[fillIndex];
+                                if (currentQuestion) {
+                                    const totalOptions = currentQuestion.options.length;
+                                    setFocusedOptionIndex(prev => (prev + 1) % totalOptions);
+                                }
                             }
                         }
                     } else if (e.code === 'Enter') {
@@ -484,7 +542,7 @@
                         if (activeTabRef.current === 'fillLetter') {
                             if (selectedLetterRef.current !== null) {
                                 const currentQuestion = data.fillLetters[fillIndex];
-                                if (selectedLetterRef.current === currentQuestion.answer) {
+                                if (currentQuestion && selectedLetterRef.current === currentQuestion.answer) {
                                     nextFill();
                                 } else {
                                     setSelectedLetter(null);
@@ -537,7 +595,7 @@
                         </header>
 
                         {/* BÀI 1: TẬP ĐỌC TỪ */}
-                        {activeTab === 'wordRead' && (
+                        {activeTab === 'wordRead' && data.readingWords.length > 0 && (
                             <div className="kid-card p-8 text-center max-w-xl mx-auto">
                                 <div className="flex justify-between text-sm font-bold text-slate-400 mb-2">
                                     <span>Từ {wordIndex + 1} / {data.readingWords.length}</span>
@@ -547,18 +605,18 @@
                                 <p className="text-2xl font-black text-slate-800 border-b pb-3">Bé hãy đánh vần to tiếng dưới đây:</p>
                                 
                                 <div className="text-6xl font-black text-sky-600 my-4 py-6 bg-sky-50 rounded-2xl border-2 border-sky-200 shadow-inner">
-                                    {data.readingWords[wordIndex].word}
+                                    {data.readingWords[wordIndex]?.word}
                                 </div>
 
                                 <button 
-                                    onClick={() => speakText(data.readingWords[wordIndex].spell)}
+                                    onClick={() => speakText(data.readingWords[wordIndex]?.spell)}
                                     className="mb-6 bg-purple-500 hover:bg-purple-400 text-white font-bold py-2.5 px-6 rounded-full btn-3d border-purple-700 inline-flex items-center gap-2 text-lg"
                                 >
                                     🔊 AI đọc đánh vần mẫu
                                 </button>
 
                                 <p className="text-xs text-purple-600 font-bold mb-4">
-                                    Gợi ý đánh vần: "{data.readingWords[wordIndex].spell}"
+                                    Gợi ý đánh vần: "{data.readingWords[wordIndex]?.spell}"
                                 </p>
 
                                 <button 
@@ -615,7 +673,7 @@
                         )}
 
                         {/* BÀI 2: ĐỌC CÂU */}
-                        {activeTab === 'sentenceRead' && (
+                        {activeTab === 'sentenceRead' && data.readingSentences.length > 0 && (
                             <div className="kid-card p-8 text-center max-w-xl mx-auto">
                                 <div className="flex justify-between text-sm font-bold text-slate-400 mb-2">
                                     <span>Câu {sentIndex + 1} / {data.readingSentences.length}</span>
@@ -691,7 +749,7 @@
                         )}
 
                         {/* BÀI 3: ĐIỀN CHỮ CÁI */}
-                        {activeTab === 'fillLetter' && (
+                        {activeTab === 'fillLetter' && data.fillLetters.length > 0 && (
                             <div className="kid-card p-8 text-center max-w-xl mx-auto">
                                 <div className="flex justify-between text-sm font-bold text-slate-400 mb-2">
                                     <span>Câu {fillIndex + 1} / {data.fillLetters.length}</span>
@@ -701,11 +759,11 @@
                                 <p className="text-2xl font-black text-slate-800 border-b pb-3">Điền vào chỗ trống (...):</p>
                                 
                                 <div className="text-5xl font-black text-amber-600 my-6 py-6 bg-amber-50 rounded-2xl border-2 border-amber-200 tracking-widest">
-                                    {data.fillLetters[fillIndex].display}
+                                    {data.fillLetters[fillIndex]?.display}
                                 </div>
 
                                 <div className="grid grid-cols-3 gap-4 mb-6">
-                                    {data.fillLetters[fillIndex].options.map((letter, idx) => {
+                                    {data.fillLetters[fillIndex]?.options.map((letter, idx) => {
                                         const isFocused = focusedOptionIndex === idx && !selectedLetter;
                                         const isSelected = selectedLetter === letter;
                                         const isCorrect = letter === data.fillLetters[fillIndex].answer;
@@ -740,10 +798,10 @@
 
                                 {selectedLetter && (
                                     <div className="mb-6">
-                                        {selectedLetter === data.fillLetters[fillIndex].answer ? (
+                                        {selectedLetter === data.fillLetters[fillIndex]?.answer ? (
                                             <div>
                                                 <p className="text-green-600 font-bold text-xl mb-4">
-                                                    🎉 Đúng rồi! Từ hoàn chỉnh là: <span className="underline">{data.fillLetters[fillIndex].fullWord}</span>
+                                                    🎉 Đúng rồi! Từ hoàn chỉnh là: <span className="underline">{data.fillLetters[fillIndex]?.fullWord}</span>
                                                 </p>
                                                 <button 
                                                     onClick={nextFill}
@@ -805,12 +863,20 @@
                                     <div className="space-y-6">
                                         <div className="flex justify-between items-center border-b pb-3">
                                             <h2 className="text-2xl font-black text-slate-800">⚙️ Bảng Cấu Hình & Nhập Liệu</h2>
-                                            <button 
-                                                onClick={() => setIsAdminAuthenticated(false)}
-                                                className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1.5 rounded-lg border border-red-300"
-                                            >
-                                                🔒 Khóa lại
-                                            </button>
+                                            <div className="flex gap-2">
+                                                <button 
+                                                    onClick={handleResetDefault}
+                                                    className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-700 font-bold px-3 py-1.5 rounded-lg border border-amber-300"
+                                                >
+                                                    🔄 Khôi phục mặc định
+                                                </button>
+                                                <button 
+                                                    onClick={() => setIsAdminAuthenticated(false)}
+                                                    className="text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-1.5 rounded-lg border border-red-300"
+                                                >
+                                                    🔒 Khóa lại
+                                                </button>
+                                            </div>
                                         </div>
                                         
                                         {/* KHU VỰC ĐIỀU CHỈNH % ĐIỂM SỐ */}
@@ -868,14 +934,15 @@
                                             <textarea 
                                                 rows="4"
                                                 className="w-full p-3 border-2 border-slate-300 rounded-xl font-bold text-sm focus:border-sky-400 outline-none"
-                                                defaultValue={data.readingWords.map(item => `${item.word} | ${item.spell}`).join('\n')}
+                                                value={data.readingWords.map(item => `${item.word} | ${item.spell}`).join('\n')}
                                                 onChange={(e) => {
                                                     const lines = e.target.value.split('\n').filter(l => l.trim() !== "");
                                                     const newWords = lines.map(line => {
                                                         const [w, s] = line.split('|');
                                                         return { word: w ? w.trim() : "", spell: s ? s.trim() : w.trim() };
                                                     });
-                                                    setData({...data, readingWords: newWords});
+                                                    setData(prev => ({ ...prev, readingWords: newWords }));
+                                                    setWordIndex(0);
                                                 }}
                                             />
                                         </div>
@@ -885,10 +952,11 @@
                                             <textarea 
                                                 rows="4"
                                                 className="w-full p-3 border-2 border-slate-300 rounded-xl font-bold text-sm focus:border-sky-400 outline-none"
-                                                defaultValue={data.readingSentences.join('\n')}
+                                                value={data.readingSentences.join('\n')}
                                                 onChange={(e) => {
                                                     const newSentences = e.target.value.split('\n').filter(s => s.trim() !== "");
-                                                    setData({...data, readingSentences: newSentences});
+                                                    setData(prev => ({ ...prev, readingSentences: newSentences }));
+                                                    setSentIndex(0);
                                                 }}
                                             />
                                         </div>
@@ -898,7 +966,7 @@
                                             <textarea 
                                                 rows="4"
                                                 className="w-full p-3 border-2 border-slate-300 rounded-xl font-bold text-sm focus:border-sky-400 outline-none"
-                                                defaultValue={data.fillLetters.map(item => `${item.display} | ${item.fullWord} | ${item.answer} | ${item.options.join(',')}`).join('\n')}
+                                                value={data.fillLetters.map(item => `${item.display} | ${item.fullWord} | ${item.answer} | ${item.options.join(',')}`).join('\n')}
                                                 onChange={(e) => {
                                                     const lines = e.target.value.split('\n').filter(l => l.trim() !== "");
                                                     const newFills = lines.map((line, idx) => {
@@ -915,7 +983,8 @@
                                                             options: shuffleArray(optionsRaw)
                                                         };
                                                     });
-                                                    setData({...data, fillLetters: newFills});
+                                                    setData(prev => ({ ...prev, fillLetters: newFills }));
+                                                    setFillIndex(0);
                                                 }}
                                             />
                                         </div>
